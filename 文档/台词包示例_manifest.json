@@ -1,0 +1,37 @@
+{
+  "id": "cute-chatter-zh",
+  "name": "软萌碎碎念（中文）- 示例包",
+  "version": "1.0.0",
+  "author": "sample",
+  "description": "可爱、幽默、轻松向的台词示例（离线也能玩）。适合点一点、摸摸、拖拽、投喂、偶尔碎碎念。",
+  "license": "CC-BY-4.0",
+  "language": "zh-CN",
+  "priority": 10,
+  "enabledByDefault": true,
+  "tags": [
+    "cute",
+    "humor",
+    "short",
+    "offline"
+  ],
+  "defaults": {
+    "cooldownMs": 5000,
+    "maxLen": 60,
+    "workMode": "mute",
+    "minIntervalMsByType": {
+      "idle": 300000,
+      "tap": 3500,
+      "pet": 6000,
+      "drag": 6000,
+      "scale": 8000,
+      "feed": 15000,
+      "reply": 0,
+      "enter": 0,
+      "exit": 0
+    }
+  },
+  "compat": {
+    "appMinVersion": "0.1.0"
+  }
+}
+
