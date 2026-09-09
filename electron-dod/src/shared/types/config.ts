@@ -9,4 +9,9 @@ export interface AppConfig {
   interactionMode: InteractionMode
   sfxEnabled: boolean
   sfxVolume: number
+  /**
+   * 当前启用的用户台词包 ID。
+   * - null：回退到内置默认包（builtin）
+   */
+  activeQuotePackId: string | null
 }

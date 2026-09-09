@@ -1,4 +1,6 @@
 import type { AppConfig } from './config'
+import type { QuotePackListResult } from './quote-pack'
+import type { ActiveQuotePackContent } from './quote'
 
 export interface AppApi {
   getVersion: () => Promise<string>
@@ -20,8 +22,18 @@ export interface PetWindowApi {
   getLocked: () => Promise<boolean>
 }
 
+export interface QuotePackApi {
+  list: () => Promise<QuotePackListResult>
+  reload: () => Promise<QuotePackListResult>
+  importFromPath: (filePath: string) => Promise<QuotePackListResult>
+  setActive: (packId: string | null) => Promise<QuotePackListResult>
+  delete: (packId: string) => Promise<QuotePackListResult>
+  getActiveQuotes: () => Promise<ActiveQuotePackContent>
+}
+
 export interface DesktopPetApi {
   app: AppApi
   config: ConfigApi
   petWindow: PetWindowApi
+  quotePack: QuotePackApi
 }

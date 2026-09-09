@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   APP_CONFIG_LIMITS,
   DEFAULT_APP_CONFIG,
@@ -6,25 +6,13 @@ import {
 } from '../../../../shared/constants/config'
 import type { AppConfig } from '../../../../shared/types/config'
 import type { InteractionEvent } from '../../../../shared/types/interaction'
+import type { ActiveQuotePackContent } from '../../../../shared/types/quote'
 import { PetStage } from '../../pet-runtime/PetStage'
 import { createSfxPlayer } from '../../sfx/sfxPlayer'
+import { createQuoteEngine } from '../../quotes/quoteEngine'
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
-
-const pick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)]
-
-const bubbleLines: Record<string, string[]> = {
-  tap: ['嘿嘿～', '戳戳！', '你叫我吗？', '在呢在呢', '嗷呜（小声）'],
-  pet: ['呼噜呼噜…', '摸摸加一分！', '好舒服～', '继续继续', '我可爱吧？'],
-  drag: ['我飘起来啦', '搬家搬家', '抓稳喽～'],
-  dragStart: ['我飘起来啦', '搬家搬家', '抓稳喽～'],
-  dragEnd: ['好啦就放这儿', '落地成功', '我站稳了！'],
-  scale: ['变大一点点', '变小一点点', '我能伸缩自如'],
-  idle: ['我先发个呆…', '今天也要快乐', '悄悄待机中'],
-  enter: ['你来了！', '欢迎光临～'],
-  exit: ['别走呀', '我会想你的']
-}
 
 function Bubble(props: { text: string; visible: boolean }): React.JSX.Element | null {
   if (!props.visible) return null
@@ -37,13 +25,17 @@ function Bubble(props: { text: string; visible: boolean }): React.JSX.Element | 
 
 export function PetWindowPage(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG)
+  const [activeQuoteContent, setActiveQuoteContent] = useState<ActiveQuotePackContent>({
+    packId: 'builtin',
+    quotes: []
+  })
   const [bubbleText, setBubbleText] = useState('')
   const [bubbleVisible, setBubbleVisible] = useState(false)
   const bubbleTimerRef = useRef<number | undefined>(undefined)
   const scaleThrottleRef = useRef(0)
-  const dragBubbleThrottleRef = useRef(0)
   const scaleSoundCooldownRef = useRef(0)
   const sfxPlayerRef = useRef(createSfxPlayer({ volume: DEFAULT_APP_CONFIG.sfxVolume }))
+  const quoteEngine = useMemo(() => createQuoteEngine({ minIntervalMs: 520 }), [])
 
   const quietMode = config.interactionMode === 'quiet'
 
@@ -51,10 +43,9 @@ export function PetWindowPage(): React.JSX.Element {
     sfxPlayerRef.current.setVolume(config.sfxVolume)
   }, [config.sfxVolume])
 
-  const showBubble = (eventType: string): void => {
+  const showBubbleText = (text: string): void => {
     if (!config.bubbleEnabled || quietMode) return
-    const lines = bubbleLines[eventType] ?? bubbleLines.tap
-    setBubbleText(pick(lines))
+    setBubbleText(text)
     setBubbleVisible(true)
     if (bubbleTimerRef.current) window.clearTimeout(bubbleTimerRef.current)
     bubbleTimerRef.current = window.setTimeout(() => setBubbleVisible(false), 1400)
@@ -84,6 +75,19 @@ export function PetWindowPage(): React.JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    const loadQuotes = async (): Promise<void> => {
+      try {
+        const content = await window.api.quotePack.getActiveQuotes()
+        setActiveQuoteContent(content)
+      } catch (error) {
+        console.warn(error)
+      }
+    }
+    void loadQuotes()
+    // 当 activeQuotePackId 变化时刷新（config 由 onChanged 驱动更新）
+  }, [config.activeQuotePackId])
+
   const handlePetEvent = (event: InteractionEvent): void => {
     // 注意：播放必须在“用户手势回调”内同步触发，不能 await IPC 后再播
     if (config.sfxEnabled && !quietMode) {
@@ -102,23 +106,8 @@ export function PetWindowPage(): React.JSX.Element {
       }
     }
 
-    if (event.type === 'dragStart') {
-      showBubble('dragStart')
-      return
-    }
-
     if (event.type === 'drag' && event.delta) {
       void window.api.petWindow.moveBy(event.delta.x, event.delta.y)
-      const now = Date.now()
-      if (now - dragBubbleThrottleRef.current > 350) {
-        dragBubbleThrottleRef.current = now
-        showBubble('drag')
-      }
-      return
-    }
-
-    if (event.type === 'dragEnd') {
-      showBubble('dragEnd')
       return
     }
 
@@ -135,11 +124,14 @@ export function PetWindowPage(): React.JSX.Element {
       )
       const normalized = normalizePetScale(nextScale)
       void window.api.config.update({ petScale: normalized })
-      showBubble('scale')
-      return
     }
 
-    showBubble(event.type)
+    if (!config.bubbleEnabled || quietMode) return
+
+    const text = quoteEngine.pick(event, activeQuoteContent.quotes)
+    if (text) {
+      showBubbleText(text)
+    }
   }
 
   return (

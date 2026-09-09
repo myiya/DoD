@@ -10,7 +10,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   bubbleEnabled: true,
   interactionMode: 'normal',
   sfxEnabled: false,
-  sfxVolume: 0.65
+  sfxVolume: 0.65,
+  activeQuotePackId: null
 }
 
 export const APP_CONFIG_LIMITS = {
@@ -28,6 +29,15 @@ const isThemeMode = (value: unknown): value is ThemeMode =>
 
 const isInteractionMode = (value: unknown): value is InteractionMode =>
   typeof value === 'string' && INTERACTION_MODE_OPTIONS.includes(value as InteractionMode)
+
+const normalizeActiveQuotePackId = (
+  value: unknown,
+  fallback: string | null = DEFAULT_APP_CONFIG.activeQuotePackId
+): string | null => {
+  if (value === null) return null
+  if (typeof value === 'string' && value.trim().length > 0) return value
+  return fallback
+}
 
 const clampPetScale = (value: number): number =>
   Math.min(APP_CONFIG_LIMITS.maxPetScale, Math.max(APP_CONFIG_LIMITS.minPetScale, value))
@@ -74,7 +84,11 @@ export const normalizeAppConfig = (
       ? value.interactionMode
       : fallback.interactionMode,
     sfxEnabled: typeof value.sfxEnabled === 'boolean' ? value.sfxEnabled : fallback.sfxEnabled,
-    sfxVolume: normalizeSfxVolume(value.sfxVolume, fallback.sfxVolume)
+    sfxVolume: normalizeSfxVolume(value.sfxVolume, fallback.sfxVolume),
+    activeQuotePackId: normalizeActiveQuotePackId(
+      value.activeQuotePackId,
+      fallback.activeQuotePackId
+    )
   }
 }
 
@@ -107,6 +121,14 @@ export const normalizeConfigPatch = (value: unknown): Partial<AppConfig> => {
 
   if (typeof value.sfxVolume === 'number' && !Number.isNaN(value.sfxVolume)) {
     patch.sfxVolume = clampSfxVolume(value.sfxVolume)
+  }
+
+  if (typeof value.activeQuotePackId === 'string' && value.activeQuotePackId.trim().length > 0) {
+    patch.activeQuotePackId = value.activeQuotePackId
+  }
+
+  if (value.activeQuotePackId === null) {
+    patch.activeQuotePackId = null
   }
 
   return patch

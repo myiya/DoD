@@ -7,6 +7,7 @@ import {
 } from '../../../../shared/constants/config'
 import type { AppConfig, InteractionMode, ThemeMode } from '../../../../shared/types/config'
 import type { InteractionEvent } from '../../../../shared/types/interaction'
+import type { QuotePackInfo, QuotePackListResult } from '../../../../shared/types/quote-pack'
 import { PetStage } from '../../pet-runtime/PetStage'
 import type { SpriteAsset } from '../../pet-runtime/types'
 import { createSfxPlayer } from '../../sfx/sfxPlayer'
@@ -53,6 +54,12 @@ function SettingsPage(): React.JSX.Element {
   const [petVisible, setPetVisible] = useState(true)
   const [petLocked, setPetLocked] = useState(false)
   const [previewAssetMode, setPreviewAssetMode] = useState<'image' | 'spritesheet'>('image')
+  const [quotePacks, setQuotePacks] = useState<QuotePackInfo[]>([])
+  const [quoteActiveId, setQuoteActiveId] = useState<string | null>(null)
+  const [quoteBusy, setQuoteBusy] = useState(false)
+  const [quoteError, setQuoteError] = useState('')
+  const [quoteDragOver, setQuoteDragOver] = useState(false)
+  const quoteFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const sfxPlayer = useMemo(() => createSfxPlayer({ volume: DEFAULT_APP_CONFIG.sfxVolume }), [])
   const debugSpritesheetUrl = useMemo(() => createDebugSpritesheetUrl(), [])
@@ -76,17 +83,20 @@ function SettingsPage(): React.JSX.Element {
         setLoading(true)
         setError('')
 
-        const [currentVersion, currentConfig, visible, locked] = await Promise.all([
+        const [currentVersion, currentConfig, visible, locked, packList] = await Promise.all([
           window.api.app.getVersion(),
           window.api.config.get(),
           window.api.petWindow.isVisible(),
-          window.api.petWindow.getLocked()
+          window.api.petWindow.getLocked(),
+          window.api.quotePack.list()
         ])
 
         setVersion(currentVersion)
         setConfig(currentConfig)
         setPetVisible(visible)
         setPetLocked(locked)
+        setQuotePacks(packList.packs)
+        setQuoteActiveId(packList.activeId)
         setNotice('配置已加载，可以开始调整')
       } catch (loadError) {
         console.error(loadError)
@@ -97,6 +107,13 @@ function SettingsPage(): React.JSX.Element {
     }
 
     void loadInitialData()
+  }, [])
+
+  useEffect(() => {
+    const off = window.api.config.onChanged((next) => {
+      setConfig(next)
+    })
+    return () => off()
   }, [])
 
   useEffect(() => {
@@ -214,6 +231,58 @@ function SettingsPage(): React.JSX.Element {
         sfxPlayer.play('scale')
       }
     }
+  }
+
+  const applyPackListResult = (result: QuotePackListResult): void => {
+    setQuotePacks(result.packs)
+    setQuoteActiveId(result.activeId)
+    if (result.notice) setNotice(result.notice)
+  }
+
+  const withQuoteBusy = async (fn: () => Promise<void>): Promise<void> => {
+    try {
+      setQuoteBusy(true)
+      setQuoteError('')
+      await fn()
+    } catch (e) {
+      console.warn(e)
+      setQuoteError('操作失败：请检查台词包格式或主进程日志。')
+    } finally {
+      setQuoteBusy(false)
+    }
+  }
+
+  const handleImportClick = (): void => {
+    quoteFileInputRef.current?.click()
+  }
+
+  const handleImportFile = (filePath: string): void => {
+    void withQuoteBusy(async () => {
+      const result = await window.api.quotePack.importFromPath(filePath)
+      applyPackListResult(result)
+    })
+  }
+
+  const handleQuoteReload = (): void => {
+    void withQuoteBusy(async () => {
+      const result = await window.api.quotePack.reload()
+      applyPackListResult(result)
+    })
+  }
+
+  const handleSetActive = (packId: string | null): void => {
+    void withQuoteBusy(async () => {
+      const result = await window.api.quotePack.setActive(packId)
+      applyPackListResult(result)
+    })
+  }
+
+  const handleDeletePack = (packId: string): void => {
+    if (!window.confirm(`确定删除台词包「${packId}」吗？删除后无法恢复。`)) return
+    void withQuoteBusy(async () => {
+      const result = await window.api.quotePack.delete(packId)
+      applyPackListResult(result)
+    })
   }
 
   return (
@@ -440,6 +509,179 @@ function SettingsPage(): React.JSX.Element {
               测试音效
             </button>
           </div>
+        </section>
+
+        <section className="settings-group">
+          <div className="group-header">
+            <h2>台词包（M3）</h2>
+            <p>导入 zip 后即可离线玩：按事件选台词，在桌宠气泡里说出来（单选启用）。</p>
+          </div>
+
+          <input
+            ref={quoteFileInputRef}
+            type="file"
+            accept=".zip"
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
+              const filePath = (file as unknown as { path?: string }).path
+              if (!filePath) {
+                setQuoteError('无法获取文件路径：请用“导入台词包”按钮选择 zip。')
+                return
+              }
+              handleImportFile(filePath)
+              // reset input so selecting same file again triggers change
+              event.currentTarget.value = ''
+            }}
+          />
+
+          <div
+            className="summary-card"
+            style={{
+              borderStyle: 'dashed',
+              borderColor: quoteDragOver ? 'rgba(56, 189, 248, 0.9)' : 'rgba(148, 163, 184, 0.45)',
+              background: quoteDragOver ? 'rgba(56, 189, 248, 0.06)' : undefined,
+              cursor: quoteBusy ? 'not-allowed' : 'default'
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              if (!quoteBusy) setQuoteDragOver(true)
+            }}
+            onDragLeave={() => setQuoteDragOver(false)}
+            onDrop={(event) => {
+              event.preventDefault()
+              setQuoteDragOver(false)
+              if (quoteBusy) return
+              const file = event.dataTransfer.files?.[0]
+              if (!file) return
+              const filePath = (file as unknown as { path?: string }).path
+              if (!filePath) {
+                setQuoteError('拖拽导入失败：未拿到文件路径。')
+                return
+              }
+              handleImportFile(filePath)
+            }}
+          >
+            <div>
+              <h2>导入台词包</h2>
+              <p>{quoteBusy ? '处理中…' : '拖拽 .zip 到这里导入，或点击下方按钮。'}</p>
+            </div>
+            {quoteError ? <p className="feedback error">{quoteError}</p> : null}
+          </div>
+
+          <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={loading || saving || quoteBusy}
+              onClick={handleImportClick}
+            >
+              导入台词包
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={loading || saving || quoteBusy}
+              onClick={handleQuoteReload}
+            >
+              重载
+            </button>
+            <span className="meta-chip" style={{ marginLeft: 'auto' }}>
+              已启用：{quoteActiveId ?? 'builtin'}
+            </span>
+          </div>
+
+          {quotePacks.length === 0 ? (
+            <p className="pet-log-empty">还没有台词包。</p>
+          ) : (
+            <ul style={{ marginTop: 12 }}>
+              {quotePacks.map((pack) => {
+                const isBuiltin = Boolean(pack.builtin) || pack.id === 'builtin'
+                const enabled = (quoteActiveId ?? 'builtin') === pack.id
+                return (
+                  <li
+                    key={pack.id}
+                    style={{
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(148, 163, 184, 0.25)',
+                      marginBottom: 10
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          alignItems: 'baseline',
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <strong
+                          style={{
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                        >
+                          {pack.name}
+                        </strong>
+                        <span className="meta-chip">v{pack.version}</span>
+                        <span className="meta-chip">{enabled ? '启用' : '未启用'}</span>
+                        {isBuiltin ? <span className="meta-chip">内置</span> : null}
+                      </div>
+                      <p style={{ margin: '6px 0 0', opacity: 0.78 }}>
+                        id：<code>{pack.id}</code>
+                      </p>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                        justifyContent: 'flex-end'
+                      }}
+                    >
+                      {!enabled ? (
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={quoteBusy}
+                          onClick={() => handleSetActive(pack.id)}
+                        >
+                          设为启用
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={quoteBusy || isBuiltin}
+                          onClick={() => handleSetActive(null)}
+                        >
+                          禁用（回退内置）
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={quoteBusy || isBuiltin}
+                        onClick={() => handleDeletePack(pack.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </section>
 
         <section className="settings-group">

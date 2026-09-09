@@ -26,6 +26,14 @@ const api: DesktopPetApi = {
     moveBy: (deltaX, deltaY) => ipcRenderer.invoke('petWindow:moveBy', deltaX, deltaY),
     setLocked: (locked) => ipcRenderer.invoke('petWindow:setLocked', locked),
     getLocked: () => ipcRenderer.invoke('petWindow:getLocked')
+  },
+  quotePack: {
+    list: () => ipcRenderer.invoke('quotePack:list'),
+    reload: () => ipcRenderer.invoke('quotePack:reload'),
+    importFromPath: (filePath) => ipcRenderer.invoke('quotePack:importFromPath', filePath),
+    setActive: (packId) => ipcRenderer.invoke('quotePack:setActive', packId),
+    delete: (packId) => ipcRenderer.invoke('quotePack:delete', packId),
+    getActiveQuotes: () => ipcRenderer.invoke('quotePack:getActiveQuotes')
   }
 }
 
