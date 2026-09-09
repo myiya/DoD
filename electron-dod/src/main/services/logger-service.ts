@@ -1,11 +1,19 @@
-import { app } from 'electron'
-import { appendFileSync, existsSync, mkdirSync } from 'fs'
+import { app, shell } from 'electron'
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { LOG_DIRECTORY_NAME, LOG_FILE_NAME } from '../constants/app'
 
-type LogLevel = 'INFO' | 'WARN' | 'ERROR'
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR'
+
+const LOG_LEVEL_WEIGHT: Record<LogLevel, number> = {
+  INFO: 10,
+  WARN: 20,
+  ERROR: 30
+}
 
 class LoggerService {
+  private fileLogLevel: LogLevel = 'INFO'
+
   private ensureLogDirectory(): string {
     const logDirectory = join(app.getPath('userData'), LOG_DIRECTORY_NAME)
 
@@ -16,8 +24,28 @@ class LoggerService {
     return logDirectory
   }
 
-  private getLogFilePath(): string {
+  getLogFilePath(): string {
     return join(this.ensureLogDirectory(), LOG_FILE_NAME)
+  }
+
+  getLogDirectoryPath(): string {
+    return this.ensureLogDirectory()
+  }
+
+  setLogLevel(level: LogLevel): void {
+    this.fileLogLevel = level
+  }
+
+  clearLogFile(): void {
+    writeFileSync(this.getLogFilePath(), '', 'utf-8')
+  }
+
+  async openLogDirectory(): Promise<void> {
+    await shell.openPath(this.getLogDirectoryPath())
+  }
+
+  private shouldWriteToFile(level: LogLevel): boolean {
+    return LOG_LEVEL_WEIGHT[level] >= LOG_LEVEL_WEIGHT[this.fileLogLevel]
   }
 
   private write(level: LogLevel, message: string, context?: unknown): void {
@@ -33,6 +61,8 @@ class LoggerService {
     }
 
     try {
+      // 仅控制落盘（app.log）的写入过滤；开发环境控制台输出不受影响
+      if (!this.shouldWriteToFile(level)) return
       appendFileSync(this.getLogFilePath(), `${line}\n`, 'utf-8')
     } catch (error) {
       console.error('[LoggerService] Failed to write log file.', error)

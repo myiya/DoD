@@ -34,6 +34,10 @@ const api: DesktopPetApi = {
     setActive: (packId) => ipcRenderer.invoke('quotePack:setActive', packId),
     delete: (packId) => ipcRenderer.invoke('quotePack:delete', packId),
     getActiveQuotes: () => ipcRenderer.invoke('quotePack:getActiveQuotes')
+  },
+  log: {
+    clear: () => ipcRenderer.invoke('log:clear'),
+    openDirectory: () => ipcRenderer.invoke('log:openDirectory')
   }
 }
 

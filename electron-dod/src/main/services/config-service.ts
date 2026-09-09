@@ -29,7 +29,9 @@ class ConfigService {
 
   private createDefaultConfig(): AppConfig {
     loggerService.info('Initialize default config file')
-    return this.writeConfig({ ...DEFAULT_APP_CONFIG })
+    const config = this.writeConfig({ ...DEFAULT_APP_CONFIG })
+    loggerService.setLogLevel(config.logLevel)
+    return config
   }
 
   get(): AppConfig {
@@ -48,6 +50,7 @@ class ConfigService {
         this.writeConfig(normalized)
       }
 
+      loggerService.setLogLevel(normalized.logLevel)
       return normalized
     } catch (error) {
       loggerService.error('Failed to read config, fallback to default config', error)
@@ -68,6 +71,7 @@ class ConfigService {
       )
 
       this.writeConfig(nextConfig)
+      loggerService.setLogLevel(nextConfig.logLevel)
       loggerService.info('Config updated successfully', patch)
       return nextConfig
     } catch (error) {
@@ -78,6 +82,7 @@ class ConfigService {
 
   reset(): AppConfig {
     const config = this.writeConfig({ ...DEFAULT_APP_CONFIG })
+    loggerService.setLogLevel(config.logLevel)
     loggerService.info('Config reset to default values')
     return config
   }

@@ -81,6 +81,10 @@ select {
   backdrop-filter: blur(14px);
 }
 
+.settings-panel--wide {
+  max-width: 1040px;
+}
+
 .settings-header,
 .summary-card,
 .settings-group,
@@ -103,6 +107,10 @@ select {
   gap: 18px;
   padding-bottom: 24px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.settings-header--compact {
+  padding-bottom: 18px;
 }
 
 .settings-kicker {
@@ -152,6 +160,10 @@ select {
   border: 1px solid rgba(148, 163, 184, 0.14);
 }
 
+.summary-card--compact {
+  margin-top: 18px;
+}
+
 .summary-card h2,
 .group-header h2 {
   font-size: 1.1rem;
@@ -181,34 +193,101 @@ select {
   border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
-.pet-row {
+.settings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
 }
 
-.pet-preview {
+.settings-nav {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.settings-nav-item {
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(30, 41, 59, 0.62);
+  color: var(--ev-c-text-1);
+  border-radius: 14px;
+  padding: 10px 14px;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.settings-nav-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.settings-nav-item.is-active {
+  border-color: rgba(134, 239, 172, 0.52);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.settings-content {
+  min-height: 420px;
+}
+
+.dropzone {
+  display: flex;
   gap: 12px;
   align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  background: rgba(30, 41, 59, 0.32);
 }
 
-.pet-stage {
-  display: inline-flex;
+.dropzone[data-active='true'] {
+  border-color: rgba(56, 189, 248, 0.9);
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.dropzone h3 {
+  margin: 0 0 6px;
+}
+
+.pack-row {
+  display: flex;
+  gap: 10px;
   align-items: center;
-  justify-content: center;
-  padding: 18px;
-  border-radius: 22px;
-  background: rgba(30, 41, 59, 0.68);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  margin-bottom: 10px;
 }
 
-.pet-stage canvas {
-  display: block;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.55);
+.pack-row-title {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.pack-row-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pack-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .pet-hint {
@@ -216,65 +295,8 @@ select {
   font-size: 0.95rem;
 }
 
-.pet-log {
-  border-radius: 20px;
-  background: rgba(30, 41, 59, 0.62);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  padding: 14px 14px 10px;
-}
-
-.pet-log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.pet-log h3 {
-  font-size: 1.05rem;
-}
-
-.pet-log ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.pet-log li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-radius: 14px;
-  padding: 10px 12px;
-  background: rgba(15, 23, 42, 0.52);
-  border: 1px solid rgba(148, 163, 184, 0.08);
-}
-
 .pet-log-empty {
   color: var(--ev-c-text-2);
-}
-
-.log-type {
-  font-weight: 700;
-  color: #93c5fd;
-  min-width: 50px;
-}
-
-.log-part {
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(134, 239, 172, 0.35);
-  color: #86efac;
-  background: rgba(134, 239, 172, 0.12);
-  font-size: 0.85rem;
-}
-
-.log-time {
-  margin-left: auto;
-  color: rgba(148, 163, 184, 0.75);
-  font-size: 0.85rem;
 }
 
 .group-header {
@@ -390,7 +412,7 @@ select {
     flex-direction: column;
   }
 
-  .pet-row {
+  .settings-layout {
     grid-template-columns: 1fr;
   }
 }

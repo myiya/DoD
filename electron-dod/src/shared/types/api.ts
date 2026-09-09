@@ -31,9 +31,15 @@ export interface QuotePackApi {
   getActiveQuotes: () => Promise<ActiveQuotePackContent>
 }
 
+export interface LogApi {
+  clear: () => Promise<void>
+  openDirectory: () => Promise<void>
+}
+
 export interface DesktopPetApi {
   app: AppApi
   config: ConfigApi
   petWindow: PetWindowApi
   quotePack: QuotePackApi
+  log: LogApi
 }

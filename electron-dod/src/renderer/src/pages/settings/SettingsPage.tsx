@@ -3,44 +3,13 @@ import {
   APP_CONFIG_LIMITS,
   DEFAULT_APP_CONFIG,
   INTERACTION_MODE_OPTIONS,
-  THEME_OPTIONS
+  LOG_LEVEL_OPTIONS
 } from '../../../../shared/constants/config'
-import type { AppConfig, InteractionMode, ThemeMode } from '../../../../shared/types/config'
-import type { InteractionEvent } from '../../../../shared/types/interaction'
+import type { AppConfig, InteractionMode, LogLevel } from '../../../../shared/types/config'
 import type { QuotePackInfo, QuotePackListResult } from '../../../../shared/types/quote-pack'
-import { PetStage } from '../../pet-runtime/PetStage'
-import type { SpriteAsset } from '../../pet-runtime/types'
 import { createSfxPlayer } from '../../sfx/sfxPlayer'
 
-const createDebugSpritesheetUrl = (): string => {
-  const frameSize = 64
-  const frameCount = 8
-  const canvas = document.createElement('canvas')
-  canvas.width = frameSize * frameCount
-  canvas.height = frameSize
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return ''
-
-  for (let i = 0; i < frameCount; i += 1) {
-    const hue = Math.round((i / frameCount) * 360)
-    const x = i * frameSize
-    ctx.fillStyle = `hsl(${hue} 80% 55%)`
-    ctx.fillRect(x, 0, frameSize, frameSize)
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-    ctx.beginPath()
-    const cx = x + frameSize / 2 + Math.sin(i * 0.8) * 8
-    const cy = frameSize / 2 + Math.cos(i * 0.8) * 8
-    ctx.arc(cx, cy, 14, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.35)'
-    ctx.font = '12px ui-sans-serif, system-ui'
-    ctx.fillText(String(i + 1), x + 6, 16)
-  }
-
-  return canvas.toDataURL('image/png')
-}
+type SettingsSectionKey = 'pet' | 'interaction' | 'sfx' | 'quotes' | 'logs' | 'about'
 
 function SettingsPage(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG)
@@ -48,34 +17,18 @@ function SettingsPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('已连接配置中心')
-  const [events, setEvents] = useState<InteractionEvent[]>([])
-  const scaleSoundCooldownRef = useRef(0)
+  const [notice, setNotice] = useState('设置已就绪')
   const [petVisible, setPetVisible] = useState(true)
   const [petLocked, setPetLocked] = useState(false)
-  const [previewAssetMode, setPreviewAssetMode] = useState<'image' | 'spritesheet'>('image')
   const [quotePacks, setQuotePacks] = useState<QuotePackInfo[]>([])
   const [quoteActiveId, setQuoteActiveId] = useState<string | null>(null)
   const [quoteBusy, setQuoteBusy] = useState(false)
   const [quoteError, setQuoteError] = useState('')
   const [quoteDragOver, setQuoteDragOver] = useState(false)
   const quoteFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('pet')
 
   const sfxPlayer = useMemo(() => createSfxPlayer({ volume: DEFAULT_APP_CONFIG.sfxVolume }), [])
-  const debugSpritesheetUrl = useMemo(() => createDebugSpritesheetUrl(), [])
-
-  const previewAsset = useMemo<SpriteAsset | undefined>(() => {
-    if (previewAssetMode === 'image') return undefined
-    return {
-      kind: 'spritesheet',
-      url: debugSpritesheetUrl,
-      frameWidth: 64,
-      frameHeight: 64,
-      frameCount: 8,
-      fps: 10,
-      loop: true
-    }
-  }, [debugSpritesheetUrl, previewAssetMode])
 
   useEffect(() => {
     const loadInitialData = async (): Promise<void> => {
@@ -97,7 +50,7 @@ function SettingsPage(): React.JSX.Element {
         setPetLocked(locked)
         setQuotePacks(packList.packs)
         setQuoteActiveId(packList.activeId)
-        setNotice('配置已加载，可以开始调整')
+        setNotice('设置已就绪')
       } catch (loadError) {
         console.error(loadError)
         setError('加载配置失败，请检查主进程日志。')
@@ -148,10 +101,6 @@ function SettingsPage(): React.JSX.Element {
     }
   }
 
-  const handleThemeChange = async (value: ThemeMode): Promise<void> => {
-    await updateConfig({ theme: value }, `主题已切换为「${value}」`)
-  }
-
   const handleScaleChange = async (value: number): Promise<void> => {
     await updateConfig({ petScale: value }, `宠物缩放已更新为 ${value.toFixed(1)}x`)
   }
@@ -177,21 +126,6 @@ function SettingsPage(): React.JSX.Element {
     await updateConfig({ sfxVolume: value }, `音效音量已更新为 ${(value * 100).toFixed(0)}%`)
   }
 
-  const handleReset = async (): Promise<void> => {
-    try {
-      setSaving(true)
-      setError('')
-      const nextConfig = await window.api.config.reset()
-      setConfig(nextConfig)
-      setNotice('已恢复默认配置')
-    } catch (resetError) {
-      console.error(resetError)
-      setError('恢复默认配置失败。')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const handleTogglePetVisible = async (): Promise<void> => {
     if (petVisible) {
       await window.api.petWindow.hide()
@@ -205,32 +139,6 @@ function SettingsPage(): React.JSX.Element {
     await window.api.petWindow.setLocked(!petLocked)
     await refreshPetWindowState()
     setNotice(!petLocked ? '桌宠已锁定（穿透）' : '桌宠已解锁（可交互）')
-  }
-
-  const handlePetEvent = (event: InteractionEvent): void => {
-    setEvents((prev) => [event, ...prev].slice(0, 16))
-
-    // 在 M2 阶段，用提示语快速确认事件链路是通的
-    const part = event.bodyPart ? `·${event.bodyPart}` : ''
-    setNotice(`收到事件：${event.type}${part}`)
-
-    if (!config.sfxEnabled) return
-
-    if (event.type === 'tap') {
-      sfxPlayer.play('tap')
-    }
-
-    if (event.type === 'pet') {
-      sfxPlayer.play('pet')
-    }
-
-    if (event.type === 'scale') {
-      const now = Date.now()
-      if (now - scaleSoundCooldownRef.current > 120) {
-        scaleSoundCooldownRef.current = now
-        sfxPlayer.play('scale')
-      }
-    }
   }
 
   const applyPackListResult = (result: QuotePackListResult): void => {
@@ -285,16 +193,38 @@ function SettingsPage(): React.JSX.Element {
     })
   }
 
+  const handleClearLog = async (): Promise<void> => {
+    if (!window.confirm('确定清空日志吗？此操作会清空 app.log 内容。')) return
+    try {
+      setSaving(true)
+      setError('')
+      await window.api.log.clear()
+      setNotice('日志已清空')
+    } catch (e) {
+      console.warn(e)
+      setError('清空日志失败，请检查主进程日志。')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleOpenLogDir = async (): Promise<void> => {
+    try {
+      await window.api.log.openDirectory()
+    } catch (e) {
+      console.warn(e)
+      setError('打开日志目录失败，请检查主进程日志。')
+    }
+  }
+
   return (
     <main className="settings-shell">
-      <section className="settings-panel">
-        <header className="settings-header">
+      <section className="settings-panel settings-panel--wide">
+        <header className="settings-header settings-header--compact">
           <div>
-            <p className="settings-kicker">桌宠 DoD · M0→M2</p>
-            <h1>最小设置页</h1>
-            <p className="settings-subtitle">
-              当前页面只负责验证配置链路：`renderer → preload → main → userData/config.json`。
-            </p>
+            <p className="settings-kicker">桌宠 DoD · Settings</p>
+            <h1>设置</h1>
+            <p className="settings-subtitle">这里是桌宠的真实设置中心。</p>
           </div>
           <div className="settings-meta">
             <span className="meta-chip">版本 {version}</span>
@@ -304,403 +234,414 @@ function SettingsPage(): React.JSX.Element {
           </div>
         </header>
 
-        <section className="summary-card">
+        <section className="summary-card summary-card--compact">
           <div>
-            <h2>当前状态</h2>
+            <h2>状态</h2>
             <p>{notice}</p>
           </div>
           {error ? (
             <p className="feedback error">{error}</p>
           ) : (
-            <p className="feedback">配置读写正常。</p>
+            <p className="feedback">运行正常。</p>
           )}
         </section>
 
-        <section className="settings-group">
-          <div className="group-header">
-            <h2>桌宠预览（M2）</h2>
-            <p>用于验证 Sprite 渲染与交互事件（tap/pet/drag/scale/idle）。</p>
-          </div>
-
-          <div className="pet-row">
-            <div className="pet-preview">
-              <label className="field">
-                <span className="field-label">预览资源</span>
-                <select
-                  value={previewAssetMode}
-                  disabled={loading || saving}
-                  onChange={(event) =>
-                    setPreviewAssetMode(event.target.value as 'image' | 'spritesheet')
-                  }
-                >
-                  <option value="image">单图（electron.svg）</option>
-                  <option value="spritesheet">示例 spritesheet（debug）</option>
-                </select>
-              </label>
-
-              <PetStage scale={config.petScale} onEvent={handlePetEvent} asset={previewAsset} />
-              <p className="pet-hint">提示：点一下 / 长按摸摸 / 拖动 / 滚轮缩放（事件记录）。</p>
-            </div>
-
-            <div className="pet-log">
-              <div className="pet-log-header">
-                <h3>事件日志</h3>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={events.length === 0}
-                  onClick={() => setEvents([])}
-                >
-                  清空
-                </button>
-              </div>
-              {events.length === 0 ? (
-                <p className="pet-log-empty">还没有事件，去摸摸它。</p>
-              ) : (
-                <ul>
-                  {events.map((item, index) => (
-                    <li key={`${item.type}-${item.timestamp}-${index}`}>
-                      <span className="log-type">{item.type}</span>
-                      {item.bodyPart ? <span className="log-part">{item.bodyPart}</span> : null}
-                      <span className="log-time">
-                        {new Date(item.timestamp).toLocaleTimeString(undefined, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="settings-group">
-          <div className="group-header">
-            <h2>桌宠控制（M1）</h2>
-            <p>用于验证托盘/窗口控制链路：显示隐藏、锁定穿透。</p>
-          </div>
-
-          <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label="设置分类">
             <button
               type="button"
-              className="ghost-button"
-              disabled={loading || saving}
-              onClick={() => void handleTogglePetVisible()}
+              className={`settings-nav-item ${activeSection === 'pet' ? 'is-active' : ''}`}
+              onClick={() => setActiveSection('pet')}
             >
-              {petVisible ? '隐藏桌宠' : '显示桌宠'}
+              桌宠窗口
             </button>
             <button
               type="button"
-              className="ghost-button"
-              disabled={loading || saving}
-              onClick={() => void handleTogglePetLocked()}
+              className={`settings-nav-item ${activeSection === 'interaction' ? 'is-active' : ''}`}
+              onClick={() => setActiveSection('interaction')}
             >
-              {petLocked ? '解锁（可交互）' : '锁定（穿透）'}
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-group">
-          <div className="group-header">
-            <h2>基础配置</h2>
-            <p>这些字段会落盘到 `userData/config.json`。</p>
-          </div>
-
-          <label className="field">
-            <span className="field-label">主题模式</span>
-            <select
-              value={config.theme}
-              disabled={loading || saving}
-              onChange={(event) => void handleThemeChange(event.target.value as ThemeMode)}
-            >
-              {THEME_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span className="field-label">宠物缩放</span>
-            <div className="range-row">
-              <input
-                type="range"
-                min={APP_CONFIG_LIMITS.minPetScale}
-                max={APP_CONFIG_LIMITS.maxPetScale}
-                step="0.1"
-                value={config.petScale}
-                disabled={loading || saving}
-                onChange={(event) => void handleScaleChange(Number(event.target.value))}
-              />
-              <strong>{config.petScale.toFixed(1)}x</strong>
-            </div>
-          </label>
-
-          <label className="field field-checkbox">
-            <div>
-              <span className="field-label">气泡提示</span>
-              <p>后续桌宠对话气泡的总开关。</p>
-            </div>
-            <input
-              type="checkbox"
-              checked={config.bubbleEnabled}
-              disabled={loading || saving}
-              onChange={(event) => void handleBubbleToggle(event.target.checked)}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">互动模式</span>
-            <div className="segmented-group">
-              {INTERACTION_MODE_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={option === config.interactionMode ? 'active' : ''}
-                  disabled={loading || saving}
-                  onClick={() => void handleInteractionModeChange(option)}
-                >
-                  {option === 'normal' ? '正常模式' : '安静模式'}
-                </button>
-              ))}
-            </div>
-          </label>
-
-          <label className="field field-checkbox">
-            <div>
-              <span className="field-label">音效（轻量）</span>
-              <p>默认关闭。开启后仅在关键交互触发短促提示音，尽量不打扰。</p>
-            </div>
-            <input
-              type="checkbox"
-              checked={config.sfxEnabled}
-              disabled={loading || saving}
-              onChange={(event) => void handleSfxToggle(event.target.checked)}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">音效音量</span>
-            <div className="range-row">
-              <input
-                type="range"
-                min={APP_CONFIG_LIMITS.minSfxVolume}
-                max={APP_CONFIG_LIMITS.maxSfxVolume}
-                step="0.05"
-                value={config.sfxVolume}
-                disabled={loading || saving || !config.sfxEnabled}
-                onChange={(event) => void handleSfxVolumeChange(Number(event.target.value))}
-              />
-              <strong>{(config.sfxVolume * 100).toFixed(0)}%</strong>
-            </div>
-          </label>
-
-          <div className="action-row">
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={loading || saving || !config.sfxEnabled}
-              onClick={() => sfxPlayer.play('notice')}
-            >
-              测试音效
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-group">
-          <div className="group-header">
-            <h2>台词包（M3）</h2>
-            <p>导入 zip 后即可离线玩：按事件选台词，在桌宠气泡里说出来（单选启用）。</p>
-          </div>
-
-          <input
-            ref={quoteFileInputRef}
-            type="file"
-            accept=".zip"
-            style={{ display: 'none' }}
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (!file) return
-              const filePath = (file as unknown as { path?: string }).path
-              if (!filePath) {
-                setQuoteError('无法获取文件路径：请用“导入台词包”按钮选择 zip。')
-                return
-              }
-              handleImportFile(filePath)
-              // reset input so selecting same file again triggers change
-              event.currentTarget.value = ''
-            }}
-          />
-
-          <div
-            className="summary-card"
-            style={{
-              borderStyle: 'dashed',
-              borderColor: quoteDragOver ? 'rgba(56, 189, 248, 0.9)' : 'rgba(148, 163, 184, 0.45)',
-              background: quoteDragOver ? 'rgba(56, 189, 248, 0.06)' : undefined,
-              cursor: quoteBusy ? 'not-allowed' : 'default'
-            }}
-            onDragOver={(event) => {
-              event.preventDefault()
-              if (!quoteBusy) setQuoteDragOver(true)
-            }}
-            onDragLeave={() => setQuoteDragOver(false)}
-            onDrop={(event) => {
-              event.preventDefault()
-              setQuoteDragOver(false)
-              if (quoteBusy) return
-              const file = event.dataTransfer.files?.[0]
-              if (!file) return
-              const filePath = (file as unknown as { path?: string }).path
-              if (!filePath) {
-                setQuoteError('拖拽导入失败：未拿到文件路径。')
-                return
-              }
-              handleImportFile(filePath)
-            }}
-          >
-            <div>
-              <h2>导入台词包</h2>
-              <p>{quoteBusy ? '处理中…' : '拖拽 .zip 到这里导入，或点击下方按钮。'}</p>
-            </div>
-            {quoteError ? <p className="feedback error">{quoteError}</p> : null}
-          </div>
-
-          <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={loading || saving || quoteBusy}
-              onClick={handleImportClick}
-            >
-              导入台词包
+              互动
             </button>
             <button
               type="button"
-              className="ghost-button"
-              disabled={loading || saving || quoteBusy}
-              onClick={handleQuoteReload}
+              className={`settings-nav-item ${activeSection === 'sfx' ? 'is-active' : ''}`}
+              onClick={() => setActiveSection('sfx')}
             >
-              重载
+              音效
             </button>
-            <span className="meta-chip" style={{ marginLeft: 'auto' }}>
-              已启用：{quoteActiveId ?? 'builtin'}
-            </span>
-          </div>
+            <button
+              type="button"
+              className={`settings-nav-item ${activeSection === 'quotes' ? 'is-active' : ''}`}
+              onClick={() => setActiveSection('quotes')}
+            >
+              台词包
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item ${activeSection === 'logs' ? 'is-active' : ''}`}
+              onClick={() => setActiveSection('logs')}
+            >
+              日志
+            </button>
+            <button
+              type="button"
+              className={`settings-nav-item ${activeSection === 'about' ? 'is-active' : ''}`}
+              onClick={() => setActiveSection('about')}
+            >
+              关于
+            </button>
+          </nav>
 
-          {quotePacks.length === 0 ? (
-            <p className="pet-log-empty">还没有台词包。</p>
-          ) : (
-            <ul style={{ marginTop: 12 }}>
-              {quotePacks.map((pack) => {
-                const isBuiltin = Boolean(pack.builtin) || pack.id === 'builtin'
-                const enabled = (quoteActiveId ?? 'builtin') === pack.id
-                return (
-                  <li
-                    key={pack.id}
-                    style={{
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(148, 163, 184, 0.25)',
-                      marginBottom: 10
-                    }}
+          <section className="settings-content">
+            {activeSection === 'pet' ? (
+              <div className="settings-group">
+                <div className="group-header">
+                  <h2>桌宠窗口</h2>
+                  <p>显示/隐藏、锁定穿透、缩放。</p>
+                </div>
+
+                <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving}
+                    onClick={() => void handleTogglePetVisible()}
                   >
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: 8,
-                          alignItems: 'baseline',
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        <strong
-                          style={{
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          }}
-                        >
-                          {pack.name}
-                        </strong>
-                        <span className="meta-chip">v{pack.version}</span>
-                        <span className="meta-chip">{enabled ? '启用' : '未启用'}</span>
-                        {isBuiltin ? <span className="meta-chip">内置</span> : null}
-                      </div>
-                      <p style={{ margin: '6px 0 0', opacity: 0.78 }}>
-                        id：<code>{pack.id}</code>
-                      </p>
-                    </div>
+                    {petVisible ? '隐藏桌宠' : '显示桌宠'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving}
+                    onClick={() => void handleTogglePetLocked()}
+                  >
+                    {petLocked ? '解锁（可交互）' : '锁定（穿透）'}
+                  </button>
+                </div>
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                        justifyContent: 'flex-end'
-                      }}
-                    >
-                      {!enabled ? (
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          disabled={quoteBusy}
-                          onClick={() => handleSetActive(pack.id)}
-                        >
-                          设为启用
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          disabled={quoteBusy || isBuiltin}
-                          onClick={() => handleSetActive(null)}
-                        >
-                          禁用（回退内置）
-                        </button>
-                      )}
+                <label className="field">
+                  <span className="field-label">缩放</span>
+                  <div className="range-row">
+                    <input
+                      type="range"
+                      min={APP_CONFIG_LIMITS.minPetScale}
+                      max={APP_CONFIG_LIMITS.maxPetScale}
+                      step="0.1"
+                      value={config.petScale}
+                      disabled={loading || saving}
+                      onChange={(event) => void handleScaleChange(Number(event.target.value))}
+                    />
+                    <strong>{config.petScale.toFixed(1)}x</strong>
+                  </div>
+                </label>
+              </div>
+            ) : null}
 
+            {activeSection === 'interaction' ? (
+              <div className="settings-group">
+                <div className="group-header">
+                  <h2>互动</h2>
+                  <p>控制打扰程度与气泡显示。</p>
+                </div>
+
+                <label className="field">
+                  <span className="field-label">互动模式</span>
+                  <div className="segmented-group">
+                    {INTERACTION_MODE_OPTIONS.map((option) => (
                       <button
+                        key={option}
                         type="button"
-                        className="ghost-button"
-                        disabled={quoteBusy || isBuiltin}
-                        onClick={() => handleDeletePack(pack.id)}
+                        className={option === config.interactionMode ? 'active' : ''}
+                        disabled={loading || saving}
+                        onClick={() => void handleInteractionModeChange(option)}
                       >
-                        删除
+                        {option === 'normal' ? '正常模式' : '安静模式'}
                       </button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </section>
+                    ))}
+                  </div>
+                </label>
 
-        <section className="settings-group">
-          <div className="group-header">
-            <h2>调试动作</h2>
-            <p>M0 只保留最小能力，方便确认主进程与渲染进程通信是否稳定。</p>
-          </div>
+                <label className="field field-checkbox">
+                  <div>
+                    <span className="field-label">气泡提示</span>
+                    <p>桌宠说话的总开关。</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={config.bubbleEnabled}
+                    disabled={loading || saving}
+                    onChange={(event) => void handleBubbleToggle(event.target.checked)}
+                  />
+                </label>
+              </div>
+            ) : null}
 
-          <div className="action-row">
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={loading || saving}
-              onClick={() => void handleReset()}
-            >
-              恢复默认配置
-            </button>
-          </div>
-        </section>
+            {activeSection === 'sfx' ? (
+              <div className="settings-group">
+                <div className="group-header">
+                  <h2>音效</h2>
+                  <p>默认关闭。开启后仅在关键交互触发短促提示音。</p>
+                </div>
+
+                <label className="field field-checkbox">
+                  <div>
+                    <span className="field-label">音效（轻量）</span>
+                    <p>开启后会在点击/摸摸/缩放时发出短音效。</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={config.sfxEnabled}
+                    disabled={loading || saving}
+                    onChange={(event) => void handleSfxToggle(event.target.checked)}
+                  />
+                </label>
+
+                <label className="field">
+                  <span className="field-label">音量</span>
+                  <div className="range-row">
+                    <input
+                      type="range"
+                      min={APP_CONFIG_LIMITS.minSfxVolume}
+                      max={APP_CONFIG_LIMITS.maxSfxVolume}
+                      step="0.05"
+                      value={config.sfxVolume}
+                      disabled={loading || saving || !config.sfxEnabled}
+                      onChange={(event) => void handleSfxVolumeChange(Number(event.target.value))}
+                    />
+                    <strong>{(config.sfxVolume * 100).toFixed(0)}%</strong>
+                  </div>
+                </label>
+
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving || !config.sfxEnabled}
+                    onClick={() => sfxPlayer.play('notice')}
+                  >
+                    测试音效
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {activeSection === 'quotes' ? (
+              <div className="settings-group">
+                <div className="group-header">
+                  <h2>台词包</h2>
+                  <p>导入 zip 后即可离线玩：按事件选台词，在桌宠气泡里说出来（单选启用）。</p>
+                </div>
+
+                <input
+                  ref={quoteFileInputRef}
+                  type="file"
+                  accept=".zip"
+                  style={{ display: 'none' }}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (!file) return
+                    const filePath = (file as unknown as { path?: string }).path
+                    if (!filePath) {
+                      setQuoteError('无法获取文件路径：请用“导入台词包”按钮选择 zip。')
+                      return
+                    }
+                    handleImportFile(filePath)
+                    event.currentTarget.value = ''
+                  }}
+                />
+
+                <div
+                  className="dropzone"
+                  data-active={quoteDragOver ? 'true' : 'false'}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    if (!quoteBusy) setQuoteDragOver(true)
+                  }}
+                  onDragLeave={() => setQuoteDragOver(false)}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    setQuoteDragOver(false)
+                    if (quoteBusy) return
+                    const file = event.dataTransfer.files?.[0]
+                    if (!file) return
+                    const filePath = (file as unknown as { path?: string }).path
+                    if (!filePath) {
+                      setQuoteError('拖拽导入失败：未拿到文件路径。')
+                      return
+                    }
+                    handleImportFile(filePath)
+                  }}
+                >
+                  <div>
+                    <h3>导入台词包</h3>
+                    <p>{quoteBusy ? '处理中…' : '拖拽 .zip 到这里导入，或点击下方按钮。'}</p>
+                  </div>
+                  {quoteError ? <p className="feedback error">{quoteError}</p> : null}
+                </div>
+
+                <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving || quoteBusy}
+                    onClick={handleImportClick}
+                  >
+                    导入台词包
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving || quoteBusy}
+                    onClick={handleQuoteReload}
+                  >
+                    重载
+                  </button>
+                  <span className="meta-chip" style={{ marginLeft: 'auto' }}>
+                    已启用：{quoteActiveId ?? 'builtin'}
+                  </span>
+                </div>
+
+                {quotePacks.length === 0 ? (
+                  <p className="pet-log-empty">还没有台词包。</p>
+                ) : (
+                  <ul style={{ marginTop: 12 }}>
+                    {quotePacks.map((pack) => {
+                      const isBuiltin = Boolean(pack.builtin) || pack.id === 'builtin'
+                      const enabled = (quoteActiveId ?? 'builtin') === pack.id
+                      return (
+                        <li key={pack.id} className="pack-row">
+                          <div style={{ minWidth: 0 }}>
+                            <div className="pack-row-title">
+                              <strong className="pack-row-name">{pack.name}</strong>
+                              <span className="meta-chip">v{pack.version}</span>
+                              <span className="meta-chip">{enabled ? '启用' : '未启用'}</span>
+                              {isBuiltin ? <span className="meta-chip">内置</span> : null}
+                            </div>
+                            <p style={{ margin: '6px 0 0', opacity: 0.78 }}>
+                              id：<code>{pack.id}</code>
+                            </p>
+                          </div>
+
+                          <div className="pack-row-actions">
+                            {!enabled ? (
+                              <button
+                                type="button"
+                                className="ghost-button"
+                                disabled={quoteBusy}
+                                onClick={() => handleSetActive(pack.id)}
+                              >
+                                设为启用
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="ghost-button"
+                                disabled={quoteBusy || isBuiltin}
+                                onClick={() => handleSetActive(null)}
+                              >
+                                禁用（回退内置）
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              disabled={quoteBusy || isBuiltin}
+                              onClick={() => handleDeletePack(pack.id)}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+
+            {activeSection === 'logs' ? (
+              <div className="settings-group">
+                <div className="group-header">
+                  <h2>日志</h2>
+                  <p>默认写入日志文件。可设置级别、清空、打开目录。</p>
+                </div>
+
+                <label className="field">
+                  <span className="field-label">日志级别</span>
+                  <select
+                    value={config.logLevel}
+                    disabled={loading || saving}
+                    onChange={(event) =>
+                      void updateConfig(
+                        { logLevel: event.target.value as LogLevel },
+                        `日志级别已设置为 ${event.target.value}`
+                      )
+                    }
+                  >
+                    {LOG_LEVEL_OPTIONS.map((level) => (
+                      <option key={level} value={level}>
+                        {level}
+                      </option>
+                    ))}
+                  </select>
+                  <p>说明：仅控制落盘到 app.log 的过滤，开发环境控制台输出不受影响。</p>
+                </label>
+
+                <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving}
+                    onClick={() => void handleClearLog()}
+                  >
+                    清空日志
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={loading || saving}
+                    onClick={() => void handleOpenLogDir()}
+                  >
+                    打开日志目录
+                  </button>
+                </div>
+
+                <p className="pet-hint">
+                  日志文件：<code>userData/logs/app.log</code>
+                </p>
+              </div>
+            ) : null}
+
+            {activeSection === 'about' ? (
+              <div className="settings-group">
+                <div className="group-header">
+                  <h2>关于</h2>
+                  <p>版本信息与基础说明。</p>
+                </div>
+
+                <div className="summary-card summary-card--compact">
+                  <div>
+                    <h2>桌宠 DoD</h2>
+                    <p>版本 {version}</p>
+                  </div>
+                  <p className="feedback">离线可玩：台词包 + 轻量互动。</p>
+                </div>
+
+                <div className="summary-card summary-card--compact">
+                  <div>
+                    <h2>存储位置</h2>
+                    <p>
+                      配置：<code>userData/config.json</code>
+                      <br />
+                      日志：<code>userData/logs/app.log</code>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
       </section>
     </main>
   )

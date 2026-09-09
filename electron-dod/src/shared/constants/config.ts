@@ -1,8 +1,10 @@
-import type { AppConfig, InteractionMode, ThemeMode } from '../types/config'
+import type { AppConfig, InteractionMode, LogLevel, ThemeMode } from '../types/config'
 
 export const THEME_OPTIONS: ThemeMode[] = ['system', 'light', 'dark']
 
 export const INTERACTION_MODE_OPTIONS: InteractionMode[] = ['normal', 'quiet']
+
+export const LOG_LEVEL_OPTIONS: LogLevel[] = ['INFO', 'WARN', 'ERROR']
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
   theme: 'system',
@@ -11,6 +13,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   interactionMode: 'normal',
   sfxEnabled: false,
   sfxVolume: 0.65,
+  logLevel: 'INFO',
   activeQuotePackId: null
 }
 
@@ -29,6 +32,9 @@ const isThemeMode = (value: unknown): value is ThemeMode =>
 
 const isInteractionMode = (value: unknown): value is InteractionMode =>
   typeof value === 'string' && INTERACTION_MODE_OPTIONS.includes(value as InteractionMode)
+
+const isLogLevel = (value: unknown): value is LogLevel =>
+  typeof value === 'string' && LOG_LEVEL_OPTIONS.includes(value as LogLevel)
 
 const normalizeActiveQuotePackId = (
   value: unknown,
@@ -85,6 +91,7 @@ export const normalizeAppConfig = (
       : fallback.interactionMode,
     sfxEnabled: typeof value.sfxEnabled === 'boolean' ? value.sfxEnabled : fallback.sfxEnabled,
     sfxVolume: normalizeSfxVolume(value.sfxVolume, fallback.sfxVolume),
+    logLevel: isLogLevel(value.logLevel) ? value.logLevel : fallback.logLevel,
     activeQuotePackId: normalizeActiveQuotePackId(
       value.activeQuotePackId,
       fallback.activeQuotePackId
@@ -121,6 +128,10 @@ export const normalizeConfigPatch = (value: unknown): Partial<AppConfig> => {
 
   if (typeof value.sfxVolume === 'number' && !Number.isNaN(value.sfxVolume)) {
     patch.sfxVolume = clampSfxVolume(value.sfxVolume)
+  }
+
+  if (isLogLevel(value.logLevel)) {
+    patch.logLevel = value.logLevel
   }
 
   if (typeof value.activeQuotePackId === 'string' && value.activeQuotePackId.trim().length > 0) {
