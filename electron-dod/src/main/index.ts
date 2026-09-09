@@ -1,6 +1,8 @@
 import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './bootstrap/create-main-window'
+import { createPetWindow } from './bootstrap/create-pet-window'
+import { createTray } from './bootstrap/create-tray'
 import { APP_USER_MODEL_ID } from './constants/app'
 import { registerIpcHandlers } from './ipc/register-ipc'
 import { loggerService } from './services/logger-service'
@@ -22,7 +24,13 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
 
-  createMainWindow()
+  // 桌宠窗口（常驻）
+  createPetWindow()
+
+  // 设置窗口默认不弹出，通过托盘打开
+  createMainWindow({ showOnReady: false })
+
+  createTray()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

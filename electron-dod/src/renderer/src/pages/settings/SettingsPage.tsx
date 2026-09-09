@@ -19,6 +19,8 @@ function SettingsPage(): React.JSX.Element {
   const [notice, setNotice] = useState('已连接配置中心')
   const [events, setEvents] = useState<InteractionEvent[]>([])
   const scaleSoundCooldownRef = useRef(0)
+  const [petVisible, setPetVisible] = useState(true)
+  const [petLocked, setPetLocked] = useState(false)
 
   const sfxPlayer = useMemo(() => createSfxPlayer({ volume: DEFAULT_APP_CONFIG.sfxVolume }), [])
 
@@ -28,13 +30,17 @@ function SettingsPage(): React.JSX.Element {
         setLoading(true)
         setError('')
 
-        const [currentVersion, currentConfig] = await Promise.all([
+        const [currentVersion, currentConfig, visible, locked] = await Promise.all([
           window.api.app.getVersion(),
-          window.api.config.get()
+          window.api.config.get(),
+          window.api.petWindow.isVisible(),
+          window.api.petWindow.getLocked()
         ])
 
         setVersion(currentVersion)
         setConfig(currentConfig)
+        setPetVisible(visible)
+        setPetLocked(locked)
         setNotice('配置已加载，可以开始调整')
       } catch (loadError) {
         console.error(loadError)
@@ -50,6 +56,19 @@ function SettingsPage(): React.JSX.Element {
   useEffect(() => {
     sfxPlayer.setVolume(config.sfxVolume)
   }, [config.sfxVolume, sfxPlayer])
+
+  const refreshPetWindowState = async (): Promise<void> => {
+    try {
+      const [visible, locked] = await Promise.all([
+        window.api.petWindow.isVisible(),
+        window.api.petWindow.getLocked()
+      ])
+      setPetVisible(visible)
+      setPetLocked(locked)
+    } catch (stateError) {
+      console.warn(stateError)
+    }
+  }
 
   const updateConfig = async (patch: Partial<AppConfig>, successNotice: string): Promise<void> => {
     try {
@@ -108,6 +127,21 @@ function SettingsPage(): React.JSX.Element {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleTogglePetVisible = async (): Promise<void> => {
+    if (petVisible) {
+      await window.api.petWindow.hide()
+    } else {
+      await window.api.petWindow.show()
+    }
+    await refreshPetWindowState()
+  }
+
+  const handleTogglePetLocked = async (): Promise<void> => {
+    await window.api.petWindow.setLocked(!petLocked)
+    await refreshPetWindowState()
+    setNotice(!petLocked ? '桌宠已锁定（穿透）' : '桌宠已解锁（可交互）')
   }
 
   const handlePetEvent = (event: InteractionEvent): void => {
@@ -211,6 +245,32 @@ function SettingsPage(): React.JSX.Element {
                 </ul>
               )}
             </div>
+          </div>
+        </section>
+
+        <section className="settings-group">
+          <div className="group-header">
+            <h2>桌宠控制（M1）</h2>
+            <p>用于验证托盘/窗口控制链路：显示隐藏、锁定穿透。</p>
+          </div>
+
+          <div className="action-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={loading || saving}
+              onClick={() => void handleTogglePetVisible()}
+            >
+              {petVisible ? '隐藏桌宠' : '显示桌宠'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={loading || saving}
+              onClick={() => void handleTogglePetLocked()}
+            >
+              {petLocked ? '解锁（可交互）' : '锁定（穿透）'}
+            </button>
           </div>
         </section>
 

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { configService } from '../services/config-service'
 import { loggerService } from '../services/logger-service'
 
@@ -18,7 +18,25 @@ const safeHandle = <TResult>(
 }
 
 export const registerConfigIpc = (): void => {
+  const broadcastConfig = (config: unknown): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.webContents.send('config:changed', config)
+      } catch (error) {
+        loggerService.warn('Failed to broadcast config change', error)
+      }
+    }
+  }
+
   safeHandle('config:get', () => configService.get())
-  safeHandle('config:update', (patch) => configService.update(patch))
-  safeHandle('config:reset', () => configService.reset())
+  safeHandle('config:update', (patch) => {
+    const config = configService.update(patch)
+    broadcastConfig(config)
+    return config
+  })
+  safeHandle('config:reset', () => {
+    const config = configService.reset()
+    broadcastConfig(config)
+    return config
+  })
 }

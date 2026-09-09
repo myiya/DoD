@@ -9,7 +9,23 @@ const api: DesktopPetApi = {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     update: (patch) => ipcRenderer.invoke('config:update', normalizeConfigPatch(patch)),
-    reset: () => ipcRenderer.invoke('config:reset')
+    reset: () => ipcRenderer.invoke('config:reset'),
+    onChanged: (listener): (() => void) => {
+      const handler = (_: unknown, config: unknown): void => {
+        listener(config as never)
+      }
+
+      ipcRenderer.on('config:changed', handler)
+      return () => ipcRenderer.off('config:changed', handler)
+    }
+  },
+  petWindow: {
+    show: () => ipcRenderer.invoke('petWindow:show'),
+    hide: () => ipcRenderer.invoke('petWindow:hide'),
+    isVisible: () => ipcRenderer.invoke('petWindow:isVisible'),
+    moveBy: (deltaX, deltaY) => ipcRenderer.invoke('petWindow:moveBy', deltaX, deltaY),
+    setLocked: (locked) => ipcRenderer.invoke('petWindow:setLocked', locked),
+    getLocked: () => ipcRenderer.invoke('petWindow:getLocked')
   }
 }
 

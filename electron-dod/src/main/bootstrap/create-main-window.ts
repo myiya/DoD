@@ -1,9 +1,11 @@
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
-import { is } from '@electron-toolkit/utils'
 import icon from '../../../resources/icon.png?asset'
+import { loadRenderer } from './load-renderer'
+import { windowState } from '../state/windows'
 
-export const createMainWindow = (): BrowserWindow => {
+export const createMainWindow = (options?: { showOnReady?: boolean }): BrowserWindow => {
+  const showOnReady = options?.showOnReady ?? true
   const mainWindow = new BrowserWindow({
     width: 960,
     height: 720,
@@ -20,7 +22,13 @@ export const createMainWindow = (): BrowserWindow => {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    if (showOnReady) {
+      mainWindow.show()
+    }
+  })
+
+  mainWindow.on('closed', () => {
+    windowState.setMainWindow(null)
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -28,11 +36,9 @@ export const createMainWindow = (): BrowserWindow => {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  void loadRenderer(mainWindow, { mode: 'settings' })
+
+  windowState.setMainWindow(mainWindow)
 
   return mainWindow
 }
