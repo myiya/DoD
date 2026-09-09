@@ -1,6 +1,6 @@
 export interface SpriteRendererOptions {
   canvas: HTMLCanvasElement
-  imageUrl: string
+  asset: import('../types').SpriteAsset
   pixelRatio?: number
 }
 
@@ -15,22 +15,22 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
 
 export const createSpriteRenderer = (options: SpriteRendererOptions): SpriteRenderer => {
-  const { canvas, imageUrl } = options
+  const { canvas, asset } = options
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     throw new Error('Canvas 2D context is not available')
   }
 
   const image = new Image()
-  image.src = imageUrl
+  image.src = asset.url
 
   const pixelRatio = clamp(options.pixelRatio ?? window.devicePixelRatio ?? 1, 1, 3)
   let scale = 1
   let disposed = false
   let rafId = 0
 
-  // 目标 FPS：30（更接近“桌宠动画”的稳定感）
-  const targetFrameMs = 1000 / 30
+  const targetFps = asset.kind === 'spritesheet' ? Math.max(1, asset.fps) : 30
+  const targetFrameMs = 1000 / targetFps
   let lastFrameTime = 0
 
   const baseSize = 260
@@ -65,10 +65,10 @@ export const createSpriteRenderer = (options: SpriteRendererOptions): SpriteRend
     const { width, height } = state.localBounds
     ctx.clearRect(0, 0, width, height)
 
-    // 简单“呼吸 + 摇摆”，用于验证渲染循环与缩放效果
-    const wobble = Math.sin(state.t * 2.2) * 0.06
-    const breathe = 1 + Math.sin(state.t * 1.6) * 0.035
-    const yFloat = Math.sin(state.t * 1.8) * 10
+    // 单图时给一点点“呼吸 + 摇摆”，spritesheet 通常由动作帧提供动感
+    const wobble = asset.kind === 'image' ? Math.sin(state.t * 2.2) * 0.06 : 0
+    const breathe = asset.kind === 'image' ? 1 + Math.sin(state.t * 1.6) * 0.035 : 1
+    const yFloat = asset.kind === 'image' ? Math.sin(state.t * 1.8) * 10 : 0
 
     const centerX = width / 2
     const centerY = height / 2 + yFloat
@@ -80,7 +80,23 @@ export const createSpriteRenderer = (options: SpriteRendererOptions): SpriteRend
     ctx.translate(-drawSize / 2, -drawSize / 2)
 
     if (image.complete && image.naturalWidth > 0) {
-      ctx.drawImage(image, 0, 0, drawSize, drawSize)
+      if (asset.kind === 'image') {
+        ctx.drawImage(image, 0, 0, drawSize, drawSize)
+      } else {
+        const loop = asset.loop ?? true
+        const frameCount = Math.max(1, asset.frameCount)
+        const startFrame = Math.max(0, asset.startFrame ?? 0)
+        const frameIndexRaw = startFrame + Math.floor(state.t * targetFps)
+        const frameIndex = loop
+          ? frameIndexRaw % frameCount
+          : Math.min(frameIndexRaw, frameCount - 1)
+
+        const columns = Math.max(1, Math.floor(image.naturalWidth / asset.frameWidth))
+        const sx = (frameIndex % columns) * asset.frameWidth
+        const sy = Math.floor(frameIndex / columns) * asset.frameHeight
+
+        ctx.drawImage(image, sx, sy, asset.frameWidth, asset.frameHeight, 0, 0, drawSize, drawSize)
+      }
     } else {
       // 图片尚未加载时给个占位
       ctx.fillStyle = 'rgba(148, 163, 184, 0.12)'

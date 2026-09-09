@@ -1,4 +1,5 @@
-export type InteractionEventType = 'tap' | 'pet' | 'drag' | 'scale' | 'enter' | 'exit' | 'idle'
+export type InteractionEventType =
+  'tap' | 'pet' | 'dragStart' | 'drag' | 'dragEnd' | 'scale' | 'enter' | 'exit' | 'idle'
 
 export type BodyPart = 'face' | 'head' | 'body' | 'tail' | 'unknown'
 

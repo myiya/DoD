@@ -8,7 +8,38 @@ import {
 import type { AppConfig, InteractionMode, ThemeMode } from '../../../../shared/types/config'
 import type { InteractionEvent } from '../../../../shared/types/interaction'
 import { PetStage } from '../../pet-runtime/PetStage'
+import type { SpriteAsset } from '../../pet-runtime/types'
 import { createSfxPlayer } from '../../sfx/sfxPlayer'
+
+const createDebugSpritesheetUrl = (): string => {
+  const frameSize = 64
+  const frameCount = 8
+  const canvas = document.createElement('canvas')
+  canvas.width = frameSize * frameCount
+  canvas.height = frameSize
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+
+  for (let i = 0; i < frameCount; i += 1) {
+    const hue = Math.round((i / frameCount) * 360)
+    const x = i * frameSize
+    ctx.fillStyle = `hsl(${hue} 80% 55%)`
+    ctx.fillRect(x, 0, frameSize, frameSize)
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.beginPath()
+    const cx = x + frameSize / 2 + Math.sin(i * 0.8) * 8
+    const cy = frameSize / 2 + Math.cos(i * 0.8) * 8
+    ctx.arc(cx, cy, 14, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.35)'
+    ctx.font = '12px ui-sans-serif, system-ui'
+    ctx.fillText(String(i + 1), x + 6, 16)
+  }
+
+  return canvas.toDataURL('image/png')
+}
 
 function SettingsPage(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG)
@@ -21,8 +52,23 @@ function SettingsPage(): React.JSX.Element {
   const scaleSoundCooldownRef = useRef(0)
   const [petVisible, setPetVisible] = useState(true)
   const [petLocked, setPetLocked] = useState(false)
+  const [previewAssetMode, setPreviewAssetMode] = useState<'image' | 'spritesheet'>('image')
 
   const sfxPlayer = useMemo(() => createSfxPlayer({ volume: DEFAULT_APP_CONFIG.sfxVolume }), [])
+  const debugSpritesheetUrl = useMemo(() => createDebugSpritesheetUrl(), [])
+
+  const previewAsset = useMemo<SpriteAsset | undefined>(() => {
+    if (previewAssetMode === 'image') return undefined
+    return {
+      kind: 'spritesheet',
+      url: debugSpritesheetUrl,
+      frameWidth: 64,
+      frameHeight: 64,
+      frameCount: 8,
+      fps: 10,
+      loop: true
+    }
+  }, [debugSpritesheetUrl, previewAssetMode])
 
   useEffect(() => {
     const loadInitialData = async (): Promise<void> => {
@@ -209,7 +255,21 @@ function SettingsPage(): React.JSX.Element {
 
           <div className="pet-row">
             <div className="pet-preview">
-              <PetStage scale={config.petScale} onEvent={handlePetEvent} />
+              <label className="field">
+                <span className="field-label">预览资源</span>
+                <select
+                  value={previewAssetMode}
+                  disabled={loading || saving}
+                  onChange={(event) =>
+                    setPreviewAssetMode(event.target.value as 'image' | 'spritesheet')
+                  }
+                >
+                  <option value="image">单图（electron.svg）</option>
+                  <option value="spritesheet">示例 spritesheet（debug）</option>
+                </select>
+              </label>
+
+              <PetStage scale={config.petScale} onEvent={handlePetEvent} asset={previewAsset} />
               <p className="pet-hint">提示：点一下 / 长按摸摸 / 拖动 / 滚轮缩放（事件记录）。</p>
             </div>
 

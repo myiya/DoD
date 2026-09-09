@@ -1,11 +1,18 @@
 import { useEffect, useRef } from 'react'
 import type { InteractionEvent } from '../../../shared/types/interaction'
-import { createSpriteRenderer } from './canvas/createSpriteRenderer'
+import { createSpriteRenderer, type SpriteRenderer } from './canvas/createSpriteRenderer'
 import electronPetUrl from '../assets/electron.svg'
+import type { SpriteAsset } from './types'
 
 export interface PetStageProps {
   scale: number
   onEvent: (event: InteractionEvent) => void
+  asset?: SpriteAsset
+}
+
+const DEFAULT_ASSET: SpriteAsset = {
+  kind: 'image',
+  url: electronPetUrl
 }
 
 const classifyBodyPart = (
@@ -27,9 +34,10 @@ const classifyBodyPart = (
 }
 
 export function PetStage(props: PetStageProps): React.JSX.Element {
-  const { scale, onEvent } = props
+  const { scale, onEvent, asset } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const rendererRef = useRef<SpriteRenderer | null>(null)
 
   const idleTimeoutMs = 8000
   const longPressMs = 520
@@ -39,6 +47,7 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
     pointerDown: false,
     dragging: false,
     longPressTriggered: false,
+    dragStartEmitted: false,
     startClientX: 0,
     startClientY: 0,
     lastClientX: 0,
@@ -55,12 +64,22 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
     const canvas = canvasRef.current
     if (!canvas) return
 
+    const resolvedAsset = asset ?? DEFAULT_ASSET
+    const renderer = createSpriteRenderer({ canvas, asset: resolvedAsset })
+    rendererRef.current = renderer
+
+    return () => {
+      renderer.dispose()
+      rendererRef.current = null
+    }
+  }, [asset])
+
+  useEffect(() => {
+    rendererRef.current?.setScale(scale)
+  }, [scale])
+
+  useEffect(() => {
     const state = stateRef.current
-    const renderer = createSpriteRenderer({
-      canvas,
-      imageUrl: electronPetUrl
-    })
-    renderer.setScale(scale)
 
     const scheduleIdle = (): void => {
       if (state.idleTimer) window.clearTimeout(state.idleTimer)
@@ -77,6 +96,8 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
       pointer: { clientX: number; clientY: number; screenX: number; screenY: number },
       extras?: Partial<InteractionEvent>
     ): void => {
+      const renderer = rendererRef.current
+      if (!renderer) return
       const local = renderer.screenToLocal(pointer.clientX, pointer.clientY)
       const bounds = renderer.getLocalBounds()
       const bodyPart = classifyBodyPart(local.x, local.y, bounds.width, bounds.height)
@@ -106,6 +127,7 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
       state.pointerDown = true
       state.dragging = false
       state.longPressTriggered = false
+      state.dragStartEmitted = false
       state.startClientX = event.clientX
       state.startClientY = event.clientY
       state.lastClientX = event.clientX
@@ -142,6 +164,10 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
       }
 
       if (state.dragging) {
+        if (!state.dragStartEmitted) {
+          state.dragStartEmitted = true
+          emitWithPosition('dragStart', event)
+        }
         emitWithPosition('drag', event, {
           delta: {
             x: event.screenX - state.lastScreenX,
@@ -165,8 +191,13 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
         emitWithPosition('tap', event)
       }
 
+      if (state.dragging) {
+        emitWithPosition('dragEnd', event)
+      }
+
       state.dragging = false
       state.longPressTriggered = false
+      state.dragStartEmitted = false
     }
 
     const handleWheel = (event: WheelEvent): void => {
@@ -199,7 +230,6 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
     scheduleIdle()
 
     return () => {
-      renderer.dispose()
       if (state.idleTimer) window.clearTimeout(state.idleTimer)
       if (state.longPressTimer) window.clearTimeout(state.longPressTimer)
       target.removeEventListener('pointerenter', handlePointerEnter)
@@ -210,7 +240,7 @@ export function PetStage(props: PetStageProps): React.JSX.Element {
       target.removeEventListener('pointercancel', handlePointerUp)
       target.removeEventListener('wheel', handleWheel)
     }
-  }, [idleTimeoutMs, longPressMs, moveThreshold, onEvent, scale])
+  }, [idleTimeoutMs, longPressMs, moveThreshold, onEvent])
 
   return (
     <div className="pet-stage" ref={containerRef}>
