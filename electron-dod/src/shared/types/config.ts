@@ -7,4 +7,6 @@ export interface AppConfig {
   petScale: number
   bubbleEnabled: boolean
   interactionMode: InteractionMode
+  sfxEnabled: boolean
+  sfxVolume: number
 }

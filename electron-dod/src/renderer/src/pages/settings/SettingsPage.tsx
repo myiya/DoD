@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   APP_CONFIG_LIMITS,
   DEFAULT_APP_CONFIG,
@@ -6,6 +6,9 @@ import {
   THEME_OPTIONS
 } from '../../../../shared/constants/config'
 import type { AppConfig, InteractionMode, ThemeMode } from '../../../../shared/types/config'
+import type { InteractionEvent } from '../../../../shared/types/interaction'
+import { PetStage } from '../../pet-runtime/PetStage'
+import { createSfxPlayer } from '../../sfx/sfxPlayer'
 
 function SettingsPage(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG)
@@ -14,6 +17,10 @@ function SettingsPage(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('已连接配置中心')
+  const [events, setEvents] = useState<InteractionEvent[]>([])
+  const scaleSoundCooldownRef = useRef(0)
+
+  const sfxPlayer = useMemo(() => createSfxPlayer({ volume: DEFAULT_APP_CONFIG.sfxVolume }), [])
 
   useEffect(() => {
     const loadInitialData = async (): Promise<void> => {
@@ -39,6 +46,10 @@ function SettingsPage(): React.JSX.Element {
 
     void loadInitialData()
   }, [])
+
+  useEffect(() => {
+    sfxPlayer.setVolume(config.sfxVolume)
+  }, [config.sfxVolume, sfxPlayer])
 
   const updateConfig = async (patch: Partial<AppConfig>, successNotice: string): Promise<void> => {
     try {
@@ -72,6 +83,18 @@ function SettingsPage(): React.JSX.Element {
     await updateConfig({ interactionMode: value }, `互动模式已切换为「${label}」`)
   }
 
+  const handleSfxToggle = async (checked: boolean): Promise<void> => {
+    // 先在用户手势内“解锁”音频（避免 await IPC 后被判定为非手势触发）
+    if (checked) {
+      sfxPlayer.play('notice')
+    }
+    await updateConfig({ sfxEnabled: checked }, checked ? '音效已开启（轻量）' : '音效已关闭')
+  }
+
+  const handleSfxVolumeChange = async (value: number): Promise<void> => {
+    await updateConfig({ sfxVolume: value }, `音效音量已更新为 ${(value * 100).toFixed(0)}%`)
+  }
+
   const handleReset = async (): Promise<void> => {
     try {
       setSaving(true)
@@ -87,12 +110,38 @@ function SettingsPage(): React.JSX.Element {
     }
   }
 
+  const handlePetEvent = (event: InteractionEvent): void => {
+    setEvents((prev) => [event, ...prev].slice(0, 16))
+
+    // 在 M2 阶段，用提示语快速确认事件链路是通的
+    const part = event.bodyPart ? `·${event.bodyPart}` : ''
+    setNotice(`收到事件：${event.type}${part}`)
+
+    if (!config.sfxEnabled) return
+
+    if (event.type === 'tap') {
+      sfxPlayer.play('tap')
+    }
+
+    if (event.type === 'pet') {
+      sfxPlayer.play('pet')
+    }
+
+    if (event.type === 'scale') {
+      const now = Date.now()
+      if (now - scaleSoundCooldownRef.current > 120) {
+        scaleSoundCooldownRef.current = now
+        sfxPlayer.play('scale')
+      }
+    }
+  }
+
   return (
     <main className="settings-shell">
       <section className="settings-panel">
         <header className="settings-header">
           <div>
-            <p className="settings-kicker">桌宠 DoD · M0</p>
+            <p className="settings-kicker">桌宠 DoD · M0→M2</p>
             <h1>最小设置页</h1>
             <p className="settings-subtitle">
               当前页面只负责验证配置链路：`renderer → preload → main → userData/config.json`。
@@ -116,6 +165,53 @@ function SettingsPage(): React.JSX.Element {
           ) : (
             <p className="feedback">配置读写正常。</p>
           )}
+        </section>
+
+        <section className="settings-group">
+          <div className="group-header">
+            <h2>桌宠预览（M2）</h2>
+            <p>用于验证 Sprite 渲染与交互事件（tap/pet/drag/scale/idle）。</p>
+          </div>
+
+          <div className="pet-row">
+            <div className="pet-preview">
+              <PetStage scale={config.petScale} onEvent={handlePetEvent} />
+              <p className="pet-hint">提示：点一下 / 长按摸摸 / 拖动 / 滚轮缩放（事件记录）。</p>
+            </div>
+
+            <div className="pet-log">
+              <div className="pet-log-header">
+                <h3>事件日志</h3>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={events.length === 0}
+                  onClick={() => setEvents([])}
+                >
+                  清空
+                </button>
+              </div>
+              {events.length === 0 ? (
+                <p className="pet-log-empty">还没有事件，去摸摸它。</p>
+              ) : (
+                <ul>
+                  {events.map((item, index) => (
+                    <li key={`${item.type}-${item.timestamp}-${index}`}>
+                      <span className="log-type">{item.type}</span>
+                      {item.bodyPart ? <span className="log-part">{item.bodyPart}</span> : null}
+                      <span className="log-time">
+                        {new Date(item.timestamp).toLocaleTimeString(undefined, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         </section>
 
         <section className="settings-group">
@@ -184,6 +280,46 @@ function SettingsPage(): React.JSX.Element {
               ))}
             </div>
           </label>
+
+          <label className="field field-checkbox">
+            <div>
+              <span className="field-label">音效（轻量）</span>
+              <p>默认关闭。开启后仅在关键交互触发短促提示音，尽量不打扰。</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={config.sfxEnabled}
+              disabled={loading || saving}
+              onChange={(event) => void handleSfxToggle(event.target.checked)}
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">音效音量</span>
+            <div className="range-row">
+              <input
+                type="range"
+                min={APP_CONFIG_LIMITS.minSfxVolume}
+                max={APP_CONFIG_LIMITS.maxSfxVolume}
+                step="0.05"
+                value={config.sfxVolume}
+                disabled={loading || saving || !config.sfxEnabled}
+                onChange={(event) => void handleSfxVolumeChange(Number(event.target.value))}
+              />
+              <strong>{(config.sfxVolume * 100).toFixed(0)}%</strong>
+            </div>
+          </label>
+
+          <div className="action-row">
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={loading || saving || !config.sfxEnabled}
+              onClick={() => sfxPlayer.play('notice')}
+            >
+              测试音效
+            </button>
+          </div>
         </section>
 
         <section className="settings-group">
